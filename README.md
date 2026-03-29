@@ -1,60 +1,103 @@
 # lucid-db
 
-TimescaleDB database image for the LUCID IoT fleet management platform. Stores agent state, component telemetry, logs, commands, events, and API keys.
+TimescaleDB (Postgres 16) database image for the LUCID IoT fleet management platform. Stores agent state, component telemetry, logs, commands, events, and API keys.
+
+## What this is
+
+`lucid-db` packages the TimescaleDB 2.17.2 / Postgres 16 image with the full LUCID schema baked in. On first boot, `init.sql` runs automatically via `/docker-entrypoint-initdb.d/`, creating all tables, hypertables, retention policies, and indexes in one shot. Subsequent starts skip init entirely (Postgres guards on data directory presence).
+
+## Dockerfile
+
+```
+FROM timescale/timescaledb:2.17.2-pg16
+COPY init.sql /docker-entrypoint-initdb.d/001_init.sql
+```
+
+`init.sql` is copied into the standard Postgres init directory and runs once on first container start.
+
+## Environment Variables
+
+| Variable            | Description                 | Example        |
+|---------------------|-----------------------------|----------------|
+| `POSTGRES_USER`     | Database superuser name     | `lucid`        |
+| `POSTGRES_PASSWORD` | Database superuser password | `REDACTED` |
+| `POSTGRES_DB`       | Database name               | `lucid`        |
 
 ## Build and Run
 
 ```bash
-# Copy and edit env file
-cp .env.example .env
-
 # Build
 docker build -t lucid-db .
 
-# Run
+# Run standalone
 docker run -d \
   --name lucid-db \
-  --env-file .env \
+  -e POSTGRES_USER=lucid \
+  -e POSTGRES_PASSWORD=REDACTED \
+  -e POSTGRES_DB=lucid \
   -p 5432:5432 \
   -v $(pwd)/pgdata:/var/lib/postgresql/data \
   lucid-db
 ```
 
-Or with Docker Compose (from the parent `lucid-central-command` stack):
+Or via the parent Central Command stack (recommended):
 
 ```bash
 cd ../lucid-central-command && docker compose up -d
 ```
 
-## Environment Variables
-
-| Variable            | Description               | Default        |
-|---------------------|---------------------------|----------------|
-| `POSTGRES_USER`     | Database superuser name   | `lucid`        |
-| `POSTGRES_PASSWORD` | Database superuser password | `REDACTED` |
-| `POSTGRES_DB`       | Database name             | `lucid`        |
-
 ## Schema
 
-The schema is initialised from `init.sql` (mounted at `/docker-entrypoint-initdb.d/001_init.sql`) on first container start.
+The schema is initialised from `init.sql` on first container start. The `timescaledb` extension is created first, then all tables, then hypertables and retention policies.
 
 ### Regular tables
 
-- `schema_migrations` — applied migration versions
-- `agents`, `agent_metadata`, `agent_status`, `agent_state`, `agent_cfg`, `agent_cfg_logging`, `agent_cfg_telemetry` — per-agent derived state
-- `components`, `component_metadata`, `component_status`, `component_state`, `component_cfg`, `component_cfg_logging`, `component_cfg_telemetry` — per-component derived state
-- `commands` — outbound command log with pending/result tracking
-- `api_keys` — hashed API keys for Central Command auth
+| Table                    | Purpose                                                                 |
+|--------------------------|-------------------------------------------------------------------------|
+| `agents`                 | Registry of known agents; `first_seen_ts` / `last_seen_ts`             |
+| `agent_metadata`         | Latest metadata payload per agent (version, platform, architecture)    |
+| `agent_status`           | Latest status per agent (state, uptime, connected since)               |
+| `agent_state`            | Latest runtime state per agent (CPU %, memory %, disk %, components JSONB) |
+| `agent_cfg`              | Latest agent config (heartbeat interval)                               |
+| `agent_cfg_logging`      | Latest logging config per agent (log level)                            |
+| `agent_cfg_telemetry`    | Latest telemetry config per agent (per-metric enabled/interval/threshold) |
+| `components`             | Registry of known components keyed by `(agent_id, component_id)`      |
+| `component_metadata`     | Latest metadata per component (version, capabilities JSONB)            |
+| `component_status`       | Latest status per component (state)                                    |
+| `component_state`        | Latest state payload per component (arbitrary JSONB)                   |
+| `component_cfg`          | Latest config payload per component (arbitrary JSONB)                  |
+| `component_cfg_logging`  | Latest logging config per component (log level)                        |
+| `component_cfg_telemetry`| Latest telemetry config per component (arbitrary JSONB)                |
+| `commands`               | Outbound command log with `result_ok` / `result_ts` for pending tracking |
+| `api_keys`               | Hashed API keys for Central Command authentication                     |
+| `schema_migrations`      | Applied migration versions; seeded with `001_initial` on first boot    |
 
 ### TimescaleDB hypertables (7-day retention)
 
-| Table                | Time column  | Description                              |
-|----------------------|--------------|------------------------------------------|
-| `agent_events`       | `received_ts`| Agent-level command results/events       |
-| `component_events`   | `received_ts`| Component-level command results/events   |
-| `agent_telemetry`    | `received_ts`| Agent metric time-series (CPU, mem, disk)|
-| `component_telemetry`| `received_ts`| Component metric time-series             |
-| `logs`               | `received_ts`| Structured log stream from agents/components |
-| `client_events`      | `ts`         | MQTT connect/disconnect events           |
+All six hypertables have automatic chunk-drop retention policies via `add_retention_policy(..., INTERVAL '7 days')`. FK constraints are intentionally absent — see note below.
 
-Retention policies are added via `add_retention_policy` and automatically drop chunks older than 7 days.
+| Table                 | Time column   | Description                                        |
+|-----------------------|---------------|----------------------------------------------------|
+| `agent_telemetry`     | `received_ts` | Agent metric time-series (CPU %, memory %, disk %) |
+| `component_telemetry` | `received_ts` | Component metric time-series (arbitrary float metrics) |
+| `agent_events`        | `received_ts` | Agent-level command results and events             |
+| `component_events`    | `received_ts` | Component-level command results and events         |
+| `logs`                | `received_ts` | Structured log stream from agents and components   |
+| `client_events`       | `ts`          | MQTT client connect / disconnect events            |
+
+## Key Indexes
+
+All time-series tables carry a compound `(agent_id, received_ts DESC)` index for efficient per-agent time-range queries. Additional indexes:
+
+- `agent_telemetry`: `(metric, received_ts DESC)`
+- `component_telemetry`: `(agent_id, component_id, received_ts DESC)`, `(metric, received_ts DESC)`
+- `component_events`: `(agent_id, component_id, received_ts DESC)`, `(request_id)`
+- `agent_events`: `(request_id)`
+- `logs`: `(component_id, received_ts DESC)`, `(agent_id, component_id, received_ts DESC)` (partial, where `component_id IS NOT NULL`)
+- `commands`: `(agent_id)`, `(agent_id, sent_ts DESC)`, partial index on pending rows (`WHERE result_ok IS NULL`)
+
+## Notes
+
+**No FK constraints on hypertables.** TimescaleDB does not support foreign keys on hypertable columns. Referential integrity for `agent_events`, `component_events`, `agent_telemetry`, `component_telemetry`, `logs`, and `client_events` is enforced at the EMQX action layer: the upsert-agents/upsert-components actions fire before the sink actions in `setup_rules.py`, guaranteeing the parent row exists before the time-series row is written.
+
+**schema_migrations seeding.** `init.sql` inserts `001_initial` into `schema_migrations` (`ON CONFLICT DO NOTHING`) so the Central Command migration runner recognises the baseline and skips re-applying it.
