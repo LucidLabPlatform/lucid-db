@@ -211,23 +211,28 @@ CREATE TABLE IF NOT EXISTS commands (
 
 CREATE INDEX IF NOT EXISTS commands_agent_id_idx ON commands(agent_id);
 CREATE INDEX IF NOT EXISTS commands_pending_idx ON commands(agent_id) WHERE result_ok IS NULL;
+CREATE INDEX IF NOT EXISTS commands_sent_ts_idx ON commands(agent_id, sent_ts DESC);
 
 -- ============================================================
 -- agent_events (hypertable)
 -- ============================================================
 
+-- No FK on agent_id: TimescaleDB does not support FKs on hypertables.
+-- Referential integrity enforced by upsert-agents action firing before agent-events-sink in setup_rules.py.
 CREATE TABLE IF NOT EXISTS agent_events (
     id          BIGSERIAL,
-    agent_id    TEXT NOT NULL REFERENCES agents(agent_id),
+    agent_id    TEXT NOT NULL,
     action      TEXT,
     request_id  TEXT,
     ok          BOOLEAN,
+    applied     JSONB,
     error       TEXT,
     received_ts TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (id, received_ts)
 );
 
 SELECT create_hypertable('agent_events', 'received_ts', if_not_exists => TRUE);
+SELECT add_retention_policy('agent_events', INTERVAL '7 days', if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS agent_events_agent_ts_idx ON agent_events(agent_id, received_ts DESC);
 CREATE INDEX IF NOT EXISTS agent_events_request_id_idx ON agent_events(request_id);
@@ -238,6 +243,8 @@ CREATE INDEX IF NOT EXISTS agent_events_request_id_idx ON agent_events(request_i
 
 CREATE TABLE IF NOT EXISTS component_events (
     id              BIGSERIAL,
+    -- No FK on agent_id/component_id: TimescaleDB does not support FKs on hypertables.
+    -- Referential integrity enforced by action ordering in setup_rules.py.
     agent_id        TEXT NOT NULL,
     component_id    TEXT NOT NULL,
     action          TEXT,
@@ -250,6 +257,7 @@ CREATE TABLE IF NOT EXISTS component_events (
 );
 
 SELECT create_hypertable('component_events', 'received_ts', if_not_exists => TRUE);
+SELECT add_retention_policy('component_events', INTERVAL '7 days', if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS component_events_agent_comp_ts_idx ON component_events(agent_id, component_id, received_ts DESC);
 CREATE INDEX IF NOT EXISTS component_events_request_id_idx ON component_events(request_id);
@@ -305,6 +313,7 @@ SELECT add_retention_policy('logs', INTERVAL '7 days', if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS logs_agent_ts_idx ON logs(agent_id, received_ts DESC);
 CREATE INDEX IF NOT EXISTS logs_component_ts_idx ON logs(component_id, received_ts DESC) WHERE component_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS logs_agent_comp_ts_idx ON logs(agent_id, component_id, received_ts DESC) WHERE component_id IS NOT NULL;
 
 -- ============================================================
 -- client_events (hypertable, 7-day retention)
