@@ -203,14 +203,18 @@ CREATE TABLE IF NOT EXISTS commands (
     agent_id        TEXT NOT NULL REFERENCES agents(agent_id),
     component_id    TEXT,
     action          TEXT NOT NULL,
+    topic           TEXT,
     payload         JSONB,
+    publisher_username TEXT,
+    publisher_clientid TEXT,
+    result_received BOOLEAN NOT NULL DEFAULT false,
     result_ok       BOOLEAN,
     result_ts       TIMESTAMPTZ,
     sent_ts         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS commands_agent_id_idx ON commands(agent_id);
-CREATE INDEX IF NOT EXISTS commands_pending_idx ON commands(agent_id) WHERE result_ok IS NULL;
+CREATE INDEX IF NOT EXISTS commands_pending_idx ON commands(agent_id) WHERE result_received = false;
 CREATE INDEX IF NOT EXISTS commands_sent_ts_idx ON commands(agent_id, sent_ts DESC);
 
 -- ============================================================
@@ -353,6 +357,70 @@ SELECT add_retention_policy('mqtt_rejected_messages', INTERVAL '7 days', if_not_
 CREATE INDEX IF NOT EXISTS mqtt_rejected_messages_ts_idx         ON mqtt_rejected_messages(received_ts DESC);
 CREATE INDEX IF NOT EXISTS mqtt_rejected_messages_topic_ts_idx   ON mqtt_rejected_messages(topic, received_ts DESC);
 CREATE INDEX IF NOT EXISTS mqtt_rejected_messages_val_ts_idx     ON mqtt_rejected_messages(validation_name, received_ts DESC);
+
+-- ============================================================
+-- users
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS users (
+    username      TEXT PRIMARY KEY,
+    role          TEXT NOT NULL,
+    created_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS users_role_idx ON users(role);
+
+-- ============================================================
+-- authn_log
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS authn_log (
+    id        BIGSERIAL PRIMARY KEY,
+    ts        TIMESTAMPTZ NOT NULL,
+    username  TEXT,
+    clientid  TEXT NOT NULL,
+    result    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS authn_log_ts_idx ON authn_log(ts DESC);
+CREATE INDEX IF NOT EXISTS authn_log_username_idx ON authn_log(username);
+
+-- ============================================================
+-- authz_log
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS authz_log (
+    id        BIGSERIAL PRIMARY KEY,
+    ts        TIMESTAMPTZ NOT NULL,
+    username  TEXT,
+    clientid  TEXT NOT NULL,
+    topic     TEXT NOT NULL,
+    action    TEXT NOT NULL,
+    result    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS authz_log_ts_idx ON authz_log(ts DESC);
+CREATE INDEX IF NOT EXISTS authz_log_username_idx ON authz_log(username);
+
+-- ============================================================
+-- topic_links
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS topic_links (
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    source_topic     TEXT NOT NULL,
+    target_topic     TEXT NOT NULL,
+    select_clause    TEXT NOT NULL DEFAULT '*',
+    payload_template TEXT,
+    qos              INTEGER NOT NULL DEFAULT 0,
+    emqx_rule_id     TEXT,
+    enabled          BOOLEAN NOT NULL DEFAULT true,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS topic_links_enabled_idx ON topic_links(enabled);
+CREATE INDEX IF NOT EXISTS topic_links_created_at_idx ON topic_links(created_at DESC);
 
 -- ============================================================
 -- api_keys

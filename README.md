@@ -13,7 +13,7 @@ FROM timescale/timescaledb:2.17.2-pg16
 COPY init.sql /docker-entrypoint-initdb.d/001_init.sql
 ```
 
-`init.sql` is copied into the standard Postgres init directory and runs once on first container start.
+`init.sql` is copied into the standard Postgres init directory and runs only on first container start.
 
 ## Environment Variables
 
@@ -68,9 +68,13 @@ The schema is initialised from `init.sql` on first container start. The `timesca
 | `component_cfg`          | Latest config payload per component (arbitrary JSONB)                  |
 | `component_cfg_logging`  | Latest logging config per component (log level)                        |
 | `component_cfg_telemetry`| Latest telemetry config per component (arbitrary JSONB)                |
-| `commands`               | Outbound command log with `result_ok` / `result_ts` for pending tracking |
-| `api_keys`               | Hashed API keys for Central Command authentication                     |
-| `schema_migrations`      | Applied migration versions; seeded with `001_initial` on first boot    |
+| `commands`               | Outbound approved-command log with publisher identity, topic, and explicit `result_received` tracking |
+| `users`                  | Central Command UI metadata for operational MQTT users                |
+| `authn_log`              | Broker authentication outcomes for dashboard audit view               |
+| `authz_log`              | Broker authorization outcomes for dashboard audit view                |
+| `topic_links`            | EMQX-backed broker-side topic routing definitions                     |
+| `api_keys`               | Hashed API keys for Central Command authentication                    |
+| `schema_migrations`      | Baseline schema marker seeded with `001_initial` on first boot         |
 
 ### TimescaleDB hypertables (7-day retention)
 
@@ -94,10 +98,14 @@ All time-series tables carry a compound `(agent_id, received_ts DESC)` index for
 - `component_events`: `(agent_id, component_id, received_ts DESC)`, `(request_id)`
 - `agent_events`: `(request_id)`
 - `logs`: `(component_id, received_ts DESC)`, `(agent_id, component_id, received_ts DESC)` (partial, where `component_id IS NOT NULL`)
-- `commands`: `(agent_id)`, `(agent_id, sent_ts DESC)`, partial index on pending rows (`WHERE result_ok IS NULL`)
+- `commands`: `(agent_id)`, `(agent_id, sent_ts DESC)`, partial index on pending rows (`WHERE result_received = false`)
+- `users`: `(role)`
+- `authn_log`: `(ts DESC)`, `(username)`
+- `authz_log`: `(ts DESC)`, `(username)`
+- `topic_links`: `(enabled)`, `(created_at DESC)`
 
 ## Notes
 
 **No FK constraints on hypertables.** TimescaleDB does not support foreign keys on hypertable columns. Referential integrity for `agent_events`, `component_events`, `agent_telemetry`, `component_telemetry`, `logs`, and `client_events` is enforced at the EMQX action layer: the upsert-agents/upsert-components actions fire before the sink actions in `setup_rules.py`, guaranteeing the parent row exists before the time-series row is written.
 
-**schema_migrations seeding.** `init.sql` inserts `001_initial` into `schema_migrations` (`ON CONFLICT DO NOTHING`) so the Central Command migration runner recognises the baseline and skips re-applying it.
+**schema_migrations seeding.** `init.sql` inserts `001_initial` into `schema_migrations` (`ON CONFLICT DO NOTHING`) as a baseline marker for a fresh database.
