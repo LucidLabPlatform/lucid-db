@@ -331,6 +331,30 @@ SELECT add_retention_policy('client_events', INTERVAL '7 days', if_not_exists =>
 CREATE INDEX IF NOT EXISTS client_events_agent_ts_idx ON client_events(agent_id, ts DESC);
 
 -- ============================================================
+-- mqtt_rejected_messages (hypertable, 7-day retention)
+-- Stores messages that failed EMQX schema validation.
+-- schema_validations use failure_action:"ignore" so messages reach
+-- the rule engine; rejection rules write here via NOT schema_check().
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS mqtt_rejected_messages (
+    id              BIGSERIAL,
+    topic           TEXT NOT NULL,
+    agent_id        TEXT,
+    raw_payload     TEXT,
+    validation_name TEXT NOT NULL,
+    received_ts     TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (id, received_ts)
+);
+
+SELECT create_hypertable('mqtt_rejected_messages', 'received_ts', if_not_exists => TRUE);
+SELECT add_retention_policy('mqtt_rejected_messages', INTERVAL '7 days', if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS mqtt_rejected_messages_ts_idx         ON mqtt_rejected_messages(received_ts DESC);
+CREATE INDEX IF NOT EXISTS mqtt_rejected_messages_topic_ts_idx   ON mqtt_rejected_messages(topic, received_ts DESC);
+CREATE INDEX IF NOT EXISTS mqtt_rejected_messages_val_ts_idx     ON mqtt_rejected_messages(validation_name, received_ts DESC);
+
+-- ============================================================
 -- api_keys
 -- ============================================================
 
