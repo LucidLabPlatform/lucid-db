@@ -46,6 +46,19 @@ Or via the parent Central Command stack (recommended):
 cd ../lucid-central-command && docker compose up -d
 ```
 
+## Normalizing legacy agent IDs
+
+If you have older fleet rows that used MQTT client IDs like `lucid.agent.rosbot`
+as the stored `agent_id`, run the one-off normalization script below against an
+existing database volume. It merges those legacy rows into the canonical agent
+IDs such as `rosbot`.
+
+```bash
+docker compose exec -T db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -f /docker-entrypoint-initdb.d/normalize_agent_ids.sql
+```
+
 ## Schema
 
 The schema is initialised from `init.sql` on first container start. The `timescaledb` extension is created first, then all tables, then hypertables and retention policies.
