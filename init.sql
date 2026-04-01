@@ -291,7 +291,7 @@ CREATE TABLE IF NOT EXISTS component_telemetry (
     agent_id        TEXT NOT NULL,
     component_id    TEXT NOT NULL,
     metric          TEXT NOT NULL,
-    value           FLOAT8 NOT NULL,
+    value           JSONB NOT NULL,
     received_ts     TIMESTAMPTZ NOT NULL
 );
 

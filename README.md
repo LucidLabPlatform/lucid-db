@@ -96,7 +96,7 @@ All six hypertables have automatic chunk-drop retention policies via `add_retent
 | Table                 | Time column   | Description                                        |
 |-----------------------|---------------|----------------------------------------------------|
 | `agent_telemetry`     | `received_ts` | Agent metric time-series (CPU %, memory %, disk %) |
-| `component_telemetry` | `received_ts` | Component metric time-series (arbitrary float metrics) |
+| `component_telemetry` | `received_ts` | Component metric time-series (`value` stored as JSONB for numeric or structured metrics) |
 | `agent_events`        | `received_ts` | Agent-level command results and events             |
 | `component_events`    | `received_ts` | Component-level command results and events         |
 | `logs`                | `received_ts` | Structured log stream from agents and components   |
