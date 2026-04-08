@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS agents (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS agent_metadata (
-    agent_id        TEXT PRIMARY KEY REFERENCES agents(agent_id),
+    agent_id        TEXT PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
     version         TEXT,
     platform        TEXT,
     architecture    TEXT,
@@ -44,11 +44,10 @@ CREATE TABLE IF NOT EXISTS agent_metadata (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS agent_status (
-    agent_id            TEXT PRIMARY KEY REFERENCES agents(agent_id),
+    agent_id            TEXT PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
     state               TEXT,
     connected_since_ts  TIMESTAMPTZ,
     uptime_s            FLOAT8,
-    version             TEXT,
     received_ts         TIMESTAMPTZ NOT NULL
 );
 
@@ -57,7 +56,7 @@ CREATE TABLE IF NOT EXISTS agent_status (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS agent_state (
-    agent_id        TEXT PRIMARY KEY REFERENCES agents(agent_id),
+    agent_id        TEXT PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
     cpu_percent     FLOAT8,
     memory_percent  FLOAT8,
     disk_percent    FLOAT8,
@@ -70,7 +69,7 @@ CREATE TABLE IF NOT EXISTS agent_state (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS agent_cfg (
-    agent_id    TEXT PRIMARY KEY REFERENCES agents(agent_id),
+    agent_id    TEXT PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
     heartbeat_s INTEGER,
     received_ts TIMESTAMPTZ NOT NULL
 );
@@ -80,7 +79,7 @@ CREATE TABLE IF NOT EXISTS agent_cfg (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS agent_cfg_logging (
-    agent_id    TEXT PRIMARY KEY REFERENCES agents(agent_id),
+    agent_id    TEXT PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
     log_level   TEXT,
     received_ts TIMESTAMPTZ NOT NULL
 );
@@ -90,7 +89,7 @@ CREATE TABLE IF NOT EXISTS agent_cfg_logging (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS agent_cfg_telemetry (
-    agent_id                TEXT PRIMARY KEY REFERENCES agents(agent_id),
+    agent_id                TEXT PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
     cpu_pct_enabled         BOOLEAN,
     cpu_pct_interval_s      INTEGER,
     cpu_pct_threshold       FLOAT8,
@@ -108,7 +107,7 @@ CREATE TABLE IF NOT EXISTS agent_cfg_telemetry (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS components (
-    agent_id        TEXT NOT NULL REFERENCES agents(agent_id),
+    agent_id        TEXT NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
     component_id    TEXT NOT NULL,
     first_seen_ts   TIMESTAMPTZ NOT NULL,
     last_seen_ts    TIMESTAMPTZ NOT NULL,
@@ -126,7 +125,7 @@ CREATE TABLE IF NOT EXISTS component_metadata (
     capabilities    JSONB,
     received_ts     TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (agent_id, component_id),
-    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id)
+    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id) ON DELETE CASCADE
 );
 
 -- ============================================================
@@ -139,7 +138,7 @@ CREATE TABLE IF NOT EXISTS component_status (
     state           TEXT,
     received_ts     TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (agent_id, component_id),
-    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id)
+    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id) ON DELETE CASCADE
 );
 
 -- ============================================================
@@ -152,7 +151,7 @@ CREATE TABLE IF NOT EXISTS component_state (
     payload         JSONB,
     received_ts     TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (agent_id, component_id),
-    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id)
+    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id) ON DELETE CASCADE
 );
 
 -- ============================================================
@@ -165,7 +164,7 @@ CREATE TABLE IF NOT EXISTS component_cfg (
     payload         JSONB,
     received_ts     TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (agent_id, component_id),
-    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id)
+    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id) ON DELETE CASCADE
 );
 
 -- ============================================================
@@ -178,7 +177,7 @@ CREATE TABLE IF NOT EXISTS component_cfg_logging (
     log_level       TEXT,
     received_ts     TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (agent_id, component_id),
-    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id)
+    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id) ON DELETE CASCADE
 );
 
 -- ============================================================
@@ -191,7 +190,7 @@ CREATE TABLE IF NOT EXISTS component_cfg_telemetry (
     payload         JSONB,
     received_ts     TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (agent_id, component_id),
-    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id)
+    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id) ON DELETE CASCADE
 );
 
 -- ============================================================
@@ -200,7 +199,7 @@ CREATE TABLE IF NOT EXISTS component_cfg_telemetry (
 
 CREATE TABLE IF NOT EXISTS commands (
     request_id      TEXT PRIMARY KEY,
-    agent_id        TEXT NOT NULL REFERENCES agents(agent_id),
+    agent_id        TEXT NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
     component_id    TEXT,
     action          TEXT NOT NULL,
     topic           TEXT,
