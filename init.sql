@@ -57,9 +57,6 @@ CREATE TABLE IF NOT EXISTS agent_status (
 
 CREATE TABLE IF NOT EXISTS agent_state (
     agent_id        TEXT PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
-    cpu_percent     FLOAT8,
-    memory_percent  FLOAT8,
-    disk_percent    FLOAT8,
     components      JSONB,
     received_ts     TIMESTAMPTZ NOT NULL
 );
@@ -197,9 +194,11 @@ CREATE TABLE IF NOT EXISTS component_cfg_telemetry (
 -- commands
 -- ============================================================
 
+-- No FK on agent_id: TimescaleDB does not support FKs on hypertables.
+-- PK is (request_id, sent_ts) to satisfy TimescaleDB partition key requirement.
 CREATE TABLE IF NOT EXISTS commands (
-    request_id      TEXT PRIMARY KEY,
-    agent_id        TEXT NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+    request_id      TEXT NOT NULL,
+    agent_id        TEXT NOT NULL,
     component_id    TEXT,
     action          TEXT NOT NULL,
     topic           TEXT,
@@ -209,9 +208,14 @@ CREATE TABLE IF NOT EXISTS commands (
     result_received BOOLEAN NOT NULL DEFAULT false,
     result_ok       BOOLEAN,
     result_ts       TIMESTAMPTZ,
-    sent_ts         TIMESTAMPTZ NOT NULL DEFAULT now()
+    sent_ts         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (request_id, sent_ts)
 );
 
+SELECT create_hypertable('commands', 'sent_ts', if_not_exists => TRUE);
+SELECT add_retention_policy('commands', INTERVAL '30 days', if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS commands_request_id_idx ON commands(request_id);
 CREATE INDEX IF NOT EXISTS commands_agent_id_idx ON commands(agent_id);
 CREATE INDEX IF NOT EXISTS commands_pending_idx ON commands(agent_id) WHERE result_received = false;
 CREATE INDEX IF NOT EXISTS commands_sent_ts_idx ON commands(agent_id, sent_ts DESC);
@@ -281,6 +285,7 @@ SELECT add_retention_policy('agent_telemetry', INTERVAL '7 days', if_not_exists 
 
 CREATE INDEX IF NOT EXISTS agent_telemetry_agent_ts_idx ON agent_telemetry(agent_id, received_ts DESC);
 CREATE INDEX IF NOT EXISTS agent_telemetry_metric_ts_idx ON agent_telemetry(metric, received_ts DESC);
+CREATE INDEX IF NOT EXISTS agent_telemetry_agent_metric_ts_idx ON agent_telemetry(agent_id, metric, received_ts DESC);
 
 -- ============================================================
 -- component_telemetry (hypertable, 7-day retention)
@@ -299,6 +304,7 @@ SELECT add_retention_policy('component_telemetry', INTERVAL '7 days', if_not_exi
 
 CREATE INDEX IF NOT EXISTS component_telemetry_agent_comp_ts_idx ON component_telemetry(agent_id, component_id, received_ts DESC);
 CREATE INDEX IF NOT EXISTS component_telemetry_metric_ts_idx ON component_telemetry(metric, received_ts DESC);
+CREATE INDEX IF NOT EXISTS component_telemetry_agent_comp_metric_ts_idx ON component_telemetry(agent_id, component_id, metric, received_ts DESC);
 
 -- ============================================================
 -- logs (hypertable, 7-day retention)
@@ -370,10 +376,29 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS users_role_idx ON users(role);
 
 -- ============================================================
--- authn_log
+-- authn_log (hypertable, 7-day retention)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS authn_log (
+    id        BIGSERIAL,
+    ts        TIMESTAMPTZ NOT NULL,
+    username  TEXT,
+    clientid  TEXT NOT NULL,
+    result    TEXT NOT NULL,
+    PRIMARY KEY (id, ts)
+);
+
+SELECT create_hypertable('authn_log', 'ts', if_not_exists => TRUE);
+SELECT add_retention_policy('authn_log', INTERVAL '7 days', if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS authn_log_ts_idx ON authn_log(ts DESC);
+CREATE INDEX IF NOT EXISTS authn_log_username_idx ON authn_log(username);
+
+-- ============================================================
+-- authn_denied (permanent — failed auth attempts never expire)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS authn_denied (
     id        BIGSERIAL PRIMARY KEY,
     ts        TIMESTAMPTZ NOT NULL,
     username  TEXT,
@@ -381,14 +406,35 @@ CREATE TABLE IF NOT EXISTS authn_log (
     result    TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS authn_log_ts_idx ON authn_log(ts DESC);
-CREATE INDEX IF NOT EXISTS authn_log_username_idx ON authn_log(username);
+CREATE INDEX IF NOT EXISTS authn_denied_ts_idx ON authn_denied(ts DESC);
+CREATE INDEX IF NOT EXISTS authn_denied_username_idx ON authn_denied(username);
 
 -- ============================================================
--- authz_log
+-- authz_log (hypertable, 7-day retention)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS authz_log (
+    id        BIGSERIAL,
+    ts        TIMESTAMPTZ NOT NULL,
+    username  TEXT,
+    clientid  TEXT NOT NULL,
+    topic     TEXT NOT NULL,
+    action    TEXT NOT NULL,
+    result    TEXT NOT NULL,
+    PRIMARY KEY (id, ts)
+);
+
+SELECT create_hypertable('authz_log', 'ts', if_not_exists => TRUE);
+SELECT add_retention_policy('authz_log', INTERVAL '7 days', if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS authz_log_ts_idx ON authz_log(ts DESC);
+CREATE INDEX IF NOT EXISTS authz_log_username_idx ON authz_log(username);
+
+-- ============================================================
+-- authz_denied (permanent — denied access attempts never expire)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS authz_denied (
     id        BIGSERIAL PRIMARY KEY,
     ts        TIMESTAMPTZ NOT NULL,
     username  TEXT,
@@ -398,8 +444,8 @@ CREATE TABLE IF NOT EXISTS authz_log (
     result    TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS authz_log_ts_idx ON authz_log(ts DESC);
-CREATE INDEX IF NOT EXISTS authz_log_username_idx ON authz_log(username);
+CREATE INDEX IF NOT EXISTS authz_denied_ts_idx ON authz_denied(ts DESC);
+CREATE INDEX IF NOT EXISTS authz_denied_username_idx ON authz_denied(username);
 
 -- ============================================================
 -- topic_links
