@@ -100,6 +100,31 @@ CREATE TABLE IF NOT EXISTS agent_cfg_telemetry (
 );
 
 -- ============================================================
+-- agent_schema
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS agent_schema (
+    agent_id        TEXT PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
+    publishes       JSONB,
+    subscribes      JSONB,
+    received_ts     TIMESTAMPTZ NOT NULL
+);
+
+-- ============================================================
+-- component_schema
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS component_schema (
+    agent_id        TEXT NOT NULL,
+    component_id    TEXT NOT NULL,
+    publishes       JSONB,
+    subscribes      JSONB,
+    received_ts     TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (agent_id, component_id),
+    FOREIGN KEY (agent_id, component_id) REFERENCES components(agent_id, component_id) ON DELETE CASCADE
+);
+
+-- ============================================================
 -- components
 -- ============================================================
 
