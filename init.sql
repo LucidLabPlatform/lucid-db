@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS agent_metadata (
     version         TEXT,
     platform        TEXT,
     architecture    TEXT,
+    ip_address      TEXT,
     received_ts     TIMESTAMPTZ NOT NULL
 );
 
@@ -511,4 +512,21 @@ CREATE TABLE IF NOT EXISTS api_keys (
 -- ============================================================
 
 INSERT INTO schema_migrations (version) VALUES ('001_initial')
+ON CONFLICT DO NOTHING;
+
+-- ============================================================
+-- Migration: 002_agent_metadata_ip_address
+-- ============================================================
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'agent_metadata' AND column_name = 'ip_address'
+    ) THEN
+        ALTER TABLE agent_metadata ADD COLUMN ip_address TEXT;
+    END IF;
+END $$;
+
+INSERT INTO schema_migrations (version) VALUES ('002_agent_metadata_ip_address')
 ON CONFLICT DO NOTHING;
