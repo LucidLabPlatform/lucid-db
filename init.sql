@@ -436,28 +436,9 @@ CREATE INDEX IF NOT EXISTS authn_denied_ts_idx ON authn_denied(ts DESC);
 CREATE INDEX IF NOT EXISTS authn_denied_username_idx ON authn_denied(username);
 
 -- ============================================================
--- authz_log (hypertable, 7-day retention)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS authz_log (
-    id        BIGSERIAL,
-    ts        TIMESTAMPTZ NOT NULL,
-    username  TEXT,
-    clientid  TEXT NOT NULL,
-    topic     TEXT NOT NULL,
-    action    TEXT NOT NULL,
-    result    TEXT NOT NULL,
-    PRIMARY KEY (id, ts)
-);
-
-SELECT create_hypertable('authz_log', 'ts', if_not_exists => TRUE);
-SELECT add_retention_policy('authz_log', INTERVAL '7 days', if_not_exists => TRUE);
-
-CREATE INDEX IF NOT EXISTS authz_log_ts_idx ON authz_log(ts DESC);
-CREATE INDEX IF NOT EXISTS authz_log_username_idx ON authz_log(username);
-
--- ============================================================
 -- authz_denied (permanent — denied access attempts never expire)
+-- The full authz firehose (authz_log) was dropped 2026-04-28; only
+-- denials are kept for security audit.
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS authz_denied (
@@ -529,4 +510,27 @@ BEGIN
 END $$;
 
 INSERT INTO schema_migrations (version) VALUES ('002_agent_metadata_ip_address')
+ON CONFLICT DO NOTHING;
+
+-- ============================================================
+-- Migration: 003_agent_component_schema_tables
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS agent_schema (
+    agent_id    TEXT PRIMARY KEY REFERENCES agents(agent_id),
+    publishes   JSONB NOT NULL DEFAULT '{}',
+    subscribes  JSONB NOT NULL DEFAULT '{}',
+    received_ts TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS component_schema (
+    agent_id     TEXT NOT NULL,
+    component_id TEXT NOT NULL,
+    publishes    JSONB NOT NULL DEFAULT '{}',
+    subscribes   JSONB NOT NULL DEFAULT '{}',
+    received_ts  TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (agent_id, component_id)
+);
+
+INSERT INTO schema_migrations (version) VALUES ('003_agent_component_schema_tables')
 ON CONFLICT DO NOTHING;
